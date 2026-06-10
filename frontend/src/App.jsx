@@ -18,6 +18,7 @@ export default function App() {
   // Trạng thái cho Conversations (ChatGPT-like)
   const [conversations, setConversations] = useState([]);
   const [activeConversationId, setActiveConversationId] = useState(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Cấu hình giọng đọc TTS (Giọng nam chuẩn en-US-GuyNeural cố định ở backend)
   const { speak, stop, isPlaying } = useSpeechSynthesis();
@@ -59,6 +60,7 @@ export default function App() {
       setConversations(prev => [newConv, ...prev]);
       setActiveConversationId(newConv.id);
       setActiveTab('chat');
+      setIsSidebarOpen(false);
       showNotification("Đã tạo cuộc trò chuyện tự do mới.");
     }
   };
@@ -91,6 +93,7 @@ export default function App() {
       setActiveConversationId(newConv.id);
       showNotification(`Đã mở khung chat riêng cho chế độ: ${details.title}`);
       setActiveTab('chat');
+      setIsSidebarOpen(false);
     }
   };
 
@@ -144,7 +147,7 @@ export default function App() {
       )}
 
       {/* Sidebar điều hướng */}
-      <aside className="app-sidebar" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%' }}>
+      <aside className={`app-sidebar ${isSidebarOpen ? 'open' : ''}`} style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%' }}>
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
           <div className="brand-section">
             <div>
@@ -167,7 +170,7 @@ export default function App() {
           <nav className="nav-menu" style={{ marginBottom: '16px' }}>
             <div 
               className={`nav-item ${activeTab === 'chat' ? 'active' : ''}`}
-              onClick={() => setActiveTab('chat')}
+              onClick={() => { setActiveTab('chat'); setIsSidebarOpen(false); }}
             >
               <span className="nav-item-icon">💬</span>
               <span>Phòng hội thoại</span>
@@ -175,7 +178,7 @@ export default function App() {
             
             <div 
               className={`nav-item ${activeTab === 'notebook' ? 'active' : ''}`}
-              onClick={() => setActiveTab('notebook')}
+              onClick={() => { setActiveTab('notebook'); setIsSidebarOpen(false); }}
             >
               <span className="nav-item-icon">📚</span>
               <span>Sổ tay thông minh</span>
@@ -183,7 +186,7 @@ export default function App() {
 
             <div 
               className={`nav-item ${activeTab === 'modes' ? 'active' : ''}`}
-              onClick={() => setActiveTab('modes')}
+              onClick={() => { setActiveTab('modes'); setIsSidebarOpen(false); }}
             >
               <span className="nav-item-icon">🎯</span>
               <span>Chế độ luyện tập</span>
@@ -206,6 +209,7 @@ export default function App() {
                     onClick={() => {
                       setActiveConversationId(conv.id);
                       setActiveTab('chat');
+                      setIsSidebarOpen(false);
                     }}
                     style={{ 
                       padding: '8px 12px', 
@@ -256,6 +260,23 @@ export default function App() {
 
       {/* Vùng nội dung chính */}
       <main className="dashboard-content">
+        {/* Nút Hamburger để mở/đóng Sidebar trên di động */}
+        <button 
+          className="sidebar-toggle-btn"
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          title="Mở thanh Sidebar"
+        >
+          {isSidebarOpen ? '✕' : '☰'}
+        </button>
+
+        {/* Overlay đóng sidebar khi click ra ngoài */}
+        {isSidebarOpen && (
+          <div 
+            className="sidebar-overlay"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        )}
+
         {activeTab === 'chat' && (
           <div className="workspace-panel" style={{ padding: '24px', height: '100%' }}>
             <div className="chat-workspace">

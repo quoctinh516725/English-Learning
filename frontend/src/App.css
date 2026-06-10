@@ -47,7 +47,6 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  flex: 1;
 }
 
 .nav-item {
@@ -735,3 +734,155 @@
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
   font-weight: 600;
 }
+
+/* ==========================================
+   MOBILE & RESPONSIVE DESIGN (SIDEBAR TOGGLE)
+   ========================================== */
+
+/* Sidebar Toggle Button (Floating Hamburger) */
+.sidebar-toggle-btn {
+  display: none;
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 1100; /* Must be higher than overlay and sidebar */
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 1.4rem;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  line-height: 1;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  transition: var(--transition-fast);
+  display: none;
+}
+
+.sidebar-toggle-btn:hover {
+  background: var(--color-primary-glow);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+/* Screen Overlay when Sidebar is active on mobile */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 998;
+  animation: overlayFadeIn 0.25s ease-out;
+}
+
+@keyframes overlayFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Responsive Styles for Tablets and Phones */
+@media (max-width: 992px) {
+  .sidebar-toggle-btn {
+    display: block; /* Show hamburger button */
+  }
+
+  .sidebar-overlay {
+    display: block; /* Allow overlay display */
+  }
+
+  .app-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 1000;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 10px 0 30px rgba(0, 0, 0, 0.6);
+    background: rgba(11, 15, 25, 0.98);
+    backdrop-filter: blur(12px);
+  }
+
+  .app-sidebar.open {
+    transform: translateX(0);
+  }
+
+  /* Padding top to prevent content overlap with hamburger */
+  .workspace-panel {
+    padding: 75px 16px 16px 16px !important;
+  }
+
+  /* Chatroom Split View: Stack the EvaluationBox below the ChatSection */
+  .chat-workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+    overflow-y: auto;
+  }
+
+  /* EvaluationBox Styling on Mobile */
+  .diagnosis-panel {
+    height: auto;
+    max-height: 500px;
+    border-top: 1px solid var(--border-color);
+    padding: 20px 0 0 0;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Notebook styling */
+  .notebook-container {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .word-list-panel {
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    padding-right: 0;
+    padding-bottom: 16px;
+    max-height: 220px;
+  }
+
+  /* Flashcards scaling */
+  .flashcard-card {
+    width: 100%;
+    max-width: 400px;
+    min-height: 250px;
+    padding: 24px;
+  }
+
+  .flashcard-word {
+    font-size: 1.6rem;
+  }
+
+  /* Message bubbles scaling for narrower screens */
+  .chat-messages {
+    padding: 12px;
+  }
+
+  .message-bubble {
+    max-width: 88%;
+    font-size: 0.9rem;
+    padding: 10px 14px;
+  }
+
+  .chat-footer {
+    padding: 12px;
+  }
+
+  .input-row {
+    gap: 8px;
+  }
+
+  .record-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 1.1rem;
+  }
+}
+
