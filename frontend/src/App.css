@@ -817,23 +817,72 @@
     padding: 75px 16px 16px 16px !important;
   }
 
-  /* Chatroom Split View: Stack the EvaluationBox below the ChatSection */
+  /* Chatroom Split View: stack elements using absolute overlays instead of grid columns */
   .chat-workspace {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr auto;
-    overflow-y: auto;
+    grid-template-columns: 1fr; /* ChatRoom takes full width */
+    gap: 0;
   }
 
-  /* EvaluationBox Styling on Mobile */
-  .diagnosis-panel {
-    height: auto;
-    max-height: 500px;
-    border-top: 1px solid var(--border-color);
-    padding: 20px 0 0 0;
+  /* Right Sidebar for Real-time Diagnosis on Mobile */
+  .diagnosis-sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 380px;
+    max-width: 85vw;
+    height: 100vh;
+    z-index: 1000;
+    transform: translateX(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: -10px 0 30px rgba(0, 0, 0, 0.6);
+    background: rgba(11, 15, 25, 0.98);
+    backdrop-filter: blur(12px);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .diagnosis-sidebar.open {
+    transform: translateX(0);
+  }
+
+  .diagnosis-sidebar .diagnosis-panel {
+    border-radius: 0;
+    border: none;
+    height: 100%;
+    overflow-y: auto;
+    padding: 24px 20px;
+  }
+
+  .diagnosis-close-btn {
+    display: block !important; /* Show close button in EvaluationBox header */
+  }
+
+  .diagnosis-toggle-btn {
+    display: inline-flex !important; /* Show toggle button in ChatRoom header */
+    align-items: center;
+    gap: 4px;
+  }
+
+  .diagnosis-overlay {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 998;
+    animation: overlayFadeIn 0.25s ease-out;
   }
 }
 
 @media (max-width: 768px) {
+  /* Smaller root font size for mobile text scaling */
+  :root {
+    font-size: 14px;
+  }
+
   /* Notebook styling */
   .notebook-container {
     grid-template-columns: 1fr;
@@ -845,44 +894,49 @@
     border-bottom: 1px solid var(--border-color);
     padding-right: 0;
     padding-bottom: 16px;
-    max-height: 220px;
+    max-height: 200px;
   }
 
   /* Flashcards scaling */
   .flashcard-card {
     width: 100%;
-    max-width: 400px;
-    min-height: 250px;
-    padding: 24px;
+    max-width: 380px;
+    min-height: 240px;
+    padding: 20px;
   }
 
   .flashcard-word {
-    font-size: 1.6rem;
+    font-size: 1.5rem;
   }
 
   /* Message bubbles scaling for narrower screens */
   .chat-messages {
-    padding: 12px;
+    padding: 10px;
   }
 
   .message-bubble {
     max-width: 88%;
-    font-size: 0.9rem;
-    padding: 10px 14px;
+    font-size: 0.85rem;
+    padding: 8px 12px;
   }
 
   .chat-footer {
-    padding: 12px;
+    padding: 10px;
   }
 
   .input-row {
-    gap: 8px;
+    gap: 6px;
   }
 
   .record-btn {
-    width: 44px;
-    height: 44px;
-    font-size: 1.1rem;
+    width: 40px;
+    height: 40px;
+    font-size: 1rem;
+  }
+
+  .text-input {
+    font-size: 0.85rem;
+    padding: 8px 12px;
   }
 }
 

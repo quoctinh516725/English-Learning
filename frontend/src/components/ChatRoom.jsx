@@ -7,7 +7,8 @@ export default function ChatRoom({
   onNewEvaluation, 
   speak,
   isPlaying,
-  onSaveNotify 
+  onSaveNotify,
+  onToggleDiagnosis
 }) {
   const { id: conversationId, mode: contextMode, details: contextDetails = {}, title } = activeConversation || {};
 
@@ -21,6 +22,8 @@ export default function ChatRoom({
   const [usedVoice, setUsedVoice] = useState(false);
 
   const chatEndRef = useRef(null);
+  const sendTimeoutRef = useRef(null);
+  const cleanTextRef = useRef(null);
 
   const API_BASE = import.meta.env.VITE_BACBKEND_URL || 'http://localhost:5000';
 
@@ -122,7 +125,7 @@ export default function ChatRoom({
         body: JSON.stringify({
           userText: textToSend,
           conversationId,
-          chatHistory: messages.slice(-10), // Gửi 10 tin nhắn gần nhất
+          chatHistory: messages.slice(-5).map(msg => ({ sender: msg.sender, text: msg.text })), // Chỉ gửi text và sender để tối ưu hóa payload
           isVoiceInput: isVoice
         })
       });
@@ -235,12 +238,62 @@ export default function ChatRoom({
     }
   };
 
-  // Theo dõi khi transcript thay đổi từ SpeechRecognition
+  // Theo dõi khi transcript thay đổi từ SpeechRecognition (Voice Trigger Sending)
   useEffect(() => {
-    if (transcript) {
-      setInputText(transcript);
+    if (!transcript) {
+      if (sendTimeoutRef.current) {
+        clearTimeout(sendTimeoutRef.current);
+        sendTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    setInputText(transcript);
+
+    // Định nghĩa Regex cho 3 cụm từ khóa ở cuối câu:
+    // 1. that's all / that is all / that all
+    // 2. send it / send
+    // 3. I'm done / I am done / done
+    const TRIGGER_REGEX = /\b(that(?:'s|s|\s+is)?\s+all|send(?:\s+it)?|(?:i(?:'m|m|\s+am)?\s+)?done)[.?!]*$/i;
+
+    if (TRIGGER_REGEX.test(transcript)) {
+      const cleanText = transcript.replace(TRIGGER_REGEX, '').trim();
+      cleanTextRef.current = cleanText;
+
+      if (sendTimeoutRef.current) {
+        clearTimeout(sendTimeoutRef.current);
+      }
+
+      console.log(`[VoiceTrigger] Detected trigger word. Clean text: "${cleanText}". Auto-sending in 1.5s...`);
+
+      sendTimeoutRef.current = setTimeout(() => {
+        if (cleanTextRef.current) {
+          handleSendMessage(cleanTextRef.current, true);
+        } else {
+          stopRecording();
+          setTranscript('');
+          setInputText('');
+        }
+        sendTimeoutRef.current = null;
+      }, 1500);
+    } else {
+      // Nếu đang có timer tự động gửi nhưng người học nói tiếp câu khác, hủy bỏ gửi ngay
+      if (sendTimeoutRef.current) {
+        console.log('[VoiceTrigger] User continued speaking. Canceling auto-send.');
+        clearTimeout(sendTimeoutRef.current);
+        sendTimeoutRef.current = null;
+      }
     }
   }, [transcript]);
+
+  // Dọn dẹp timer khi component bị hủy
+  useEffect(() => {
+    return () => {
+      if (sendTimeoutRef.current) {
+        clearTimeout(sendTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Đồng bộ danh sách chẩn đoán (tối đa 5 cái gần nhất) lên App.jsx
   useEffect(() => {
@@ -276,8 +329,17 @@ export default function ChatRoom({
           </span>
         </div>
 
-        {/* Nút dọn dẹp hội thoại */}
+        {/* Nút dọn dẹp và nút chẩn đoán */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button 
+            className="diagnosis-toggle-btn btn-secondary"
+            onClick={onToggleDiagnosis}
+            style={{ padding: '6px 12px', fontSize: '0.75rem', color: 'var(--color-primary)', borderColor: 'rgba(14,165,233,0.2)', borderRadius: '8px', display: 'none' }}
+            title="Xem chẩn đoán phát âm & ngữ pháp"
+          >
+            📊 Chẩn đoán
+          </button>
+
           <button 
             className="btn-secondary"
             onClick={handleClearConversation}

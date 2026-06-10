@@ -19,6 +19,7 @@ export default function App() {
   const [conversations, setConversations] = useState([]);
   const [activeConversationId, setActiveConversationId] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isDiagnosisOpen, setIsDiagnosisOpen] = useState(false);
 
   // Cấu hình giọng đọc TTS (Giọng nam chuẩn en-US-GuyNeural cố định ở backend)
   const { speak, stop, isPlaying } = useSpeechSynthesis();
@@ -278,7 +279,7 @@ export default function App() {
         )}
 
         {activeTab === 'chat' && (
-          <div className="workspace-panel" style={{ padding: '24px', height: '100%' }}>
+          <div className="workspace-panel" style={{ padding: '24px', height: '100%', overflow: 'hidden' }}>
             <div className="chat-workspace">
               {/* Phòng chat */}
               {activeConversationId ? (
@@ -288,6 +289,7 @@ export default function App() {
                   speak={speak}
                   isPlaying={isPlaying}
                   onSaveNotify={showNotification}
+                  onToggleDiagnosis={() => setIsDiagnosisOpen(prev => !prev)}
                 />
               ) : (
                 <div className="glass-panel chat-section" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.95rem' }}>
@@ -295,17 +297,28 @@ export default function App() {
                 </div>
               )}
               
-              {/* Bảng chẩn đoán phát âm, ngữ pháp */}
-              <EvaluationBox 
-                evaluation={currentEvaluation}
-                onSaveNotify={showNotification}
-              />
+              {/* Bảng chẩn đoán phát âm, ngữ pháp (Dạng sidebar trượt trên di động) */}
+              <div className={`diagnosis-sidebar ${isDiagnosisOpen ? 'open' : ''}`}>
+                <EvaluationBox 
+                  evaluation={currentEvaluation}
+                  onSaveNotify={showNotification}
+                  onClose={() => setIsDiagnosisOpen(false)}
+                />
+              </div>
+
+              {/* Lớp phủ chẩn đoán trên di động */}
+              {isDiagnosisOpen && (
+                <div 
+                  className="diagnosis-overlay"
+                  onClick={() => setIsDiagnosisOpen(false)}
+                />
+              )}
             </div>
           </div>
         )}
 
         {activeTab === 'notebook' && (
-          <div className="workspace-panel">
+          <div className="workspace-panel" style={{ height: '100%', overflow: 'hidden' }}>
             <Notebook 
               onPlayVoice={speak} 
               onSaveNotify={showNotification}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 
-export default function EvaluationBox({ evaluation: evaluations, onSaveNotify }) {
+export default function EvaluationBox({ evaluation: evaluations, onSaveNotify, onClose }) {
   const [selectedWord, setSelectedWord] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -97,7 +97,28 @@ export default function EvaluationBox({ evaluation: evaluations, onSaveNotify })
 
   return (
     <div className="diagnosis-panel glass-panel animate-fade-in">
-      <h3 className="panel-title">🎯 Real-time Diagnosis</h3>
+      <h3 className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+        <span>🎯 Real-time Diagnosis</span>
+        {onClose && (
+          <button 
+            className="diagnosis-close-btn"
+            onClick={onClose}
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              color: 'var(--text-muted)', 
+              cursor: 'pointer', 
+              fontSize: '1.2rem', 
+              padding: '4px 8px',
+              lineHeight: 1,
+              display: 'none' /* Chỉ hiện trên mobile qua CSS */
+            }}
+            title="Đóng bảng chẩn đoán"
+          >
+            ✕
+          </button>
+        )}
+      </h3>
 
       {/* Điều chuyển lịch sử chẩn đoán (Tối đa 5 cái gần nhất) */}
       {evaluations.length > 1 && (
