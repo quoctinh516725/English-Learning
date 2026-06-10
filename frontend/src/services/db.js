@@ -88,5 +88,48 @@ export const db = {
       console.error('Error updating flashcard schedule:', e);
       return null;
     }
+  },
+
+  // --- Conversation Operations (Cloud DB) ---
+  async getConversations() {
+    try {
+      const response = await fetch(`${API_BASE}/api/conversations`, {
+        headers: getHeaders()
+      });
+      if (!response.ok) throw new Error('Failed to fetch conversations.');
+      return await response.json();
+    } catch (e) {
+      console.error('Error fetching conversations:', e);
+      return [];
+    }
+  },
+
+  async createConversation(title, mode = 'free-talk', details = {}) {
+    try {
+      const response = await fetch(`${API_BASE}/api/conversations`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ title, mode, details })
+      });
+      if (!response.ok) throw new Error('Failed to create conversation.');
+      return await response.json();
+    } catch (e) {
+      console.error('Error creating conversation:', e);
+      return null;
+    }
+  },
+
+  async deleteConversation(id) {
+    try {
+      const response = await fetch(`${API_BASE}/api/conversations/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders()
+      });
+      if (!response.ok) throw new Error('Failed to delete conversation.');
+      return true;
+    } catch (e) {
+      console.error('Error deleting conversation:', e);
+      return false;
+    }
   }
 };

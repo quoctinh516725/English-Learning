@@ -3,15 +3,14 @@ import useSpeechRecognition from '../hooks/useSpeechRecognition';
 import SuggestionCards from './SuggestionCards';
 
 export default function ChatRoom({ 
-  voiceConfig, 
-  setVoiceConfig, 
-  contextMode, 
-  contextDetails, 
+  activeConversation,
   onNewEvaluation, 
   speak,
   isPlaying,
   onSaveNotify 
 }) {
+  const { id: conversationId, mode: contextMode, details: contextDetails = {}, title } = activeConversation || {};
+
   const { isRecording, transcript, setTranscript, startRecording, stopRecording, supported } = useSpeechRecognition();
   
   const [messages, setMessages] = useState([]);
@@ -19,13 +18,16 @@ export default function ChatRoom({
   const [loading, setLoading] = useState(false);
   const [roleplayChecklist, setRoleplayChecklist] = useState([]);
   const [usedTopicWords, setUsedTopicWords] = useState([]);
+  const [usedVoice, setUsedVoice] = useState(false);
 
   const chatEndRef = useRef(null);
 
   const API_BASE = import.meta.env.VITE_BACBKEND_URL || 'http://localhost:5000';
 
-  // Khởi tạo phòng chat khi đổi chế độ
+  // Khởi tạo phòng chat khi cuộc hội thoại thay đổi
   useEffect(() => {
+    if (!conversationId) return;
+
     setMessages([]);
     onNewEvaluation(null);
     setUsedTopicWords([]);
@@ -45,7 +47,7 @@ export default function ChatRoom({
       setLoading(true);
       try {
         const token = localStorage.getItem('auth_token');
-        const response = await fetch(`${API_BASE}/api/chat/history`, {
+        const response = await fetch(`${API_BASE}/api/chat/history?conversationId=${conversationId}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (response.ok) {
@@ -77,7 +79,7 @@ export default function ChatRoom({
     };
 
     loadHistory();
-  }, [contextMode, contextDetails]);
+  }, [conversationId, contextMode]);
 
   // Tự động cuộn xuống cuối ô chat
   useEffect(() => {
@@ -88,7 +90,7 @@ export default function ChatRoom({
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSendMessage(inputText, false);
+      handleSendMessage(inputText, usedVoice);
     }
   };
 
@@ -96,11 +98,17 @@ export default function ChatRoom({
   const handleSendMessage = async (textToSend, isVoice = false) => {
     if (!textToSend || textToSend.trim() === '') return;
 
+    // Tự động dừng ghi âm nếu đang chạy khi tin nhắn được gửi đi
+    if (isRecording) {
+      stopRecording();
+    }
+
     // Thêm tin nhắn của user vào chat history
     const userMessage = { sender: 'user', text: textToSend, timestamp: new Date() };
     setMessages(prev => [...prev, userMessage]);
     setInputText('');
     setTranscript('');
+    setUsedVoice(false);
     setLoading(true);
 
     try {
@@ -113,11 +121,7 @@ export default function ChatRoom({
         },
         body: JSON.stringify({
           userText: textToSend,
-          contextMode,
-          contextDetails: {
-            ...contextDetails,
-            taskChecklist: roleplayChecklist.map(t => t.text) // Gửi danh sách task gốc
-          },
+          conversationId,
           chatHistory: messages.slice(-10), // Gửi 10 tin nhắn gần nhất
           isVoiceInput: isVoice
         })
@@ -180,14 +184,14 @@ export default function ChatRoom({
     }
   };
 
-  // Xóa sạch hội thoại hiện tại
+  // Xóa sạch hội thoại hiện tại (Chỉ dọn tin nhắn, giữ nguyên thread ở Sidebar)
   const handleClearConversation = async () => {
-    const confirmClear = window.confirm("Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện? Hành động này sẽ xóa vĩnh viễn tin nhắn trong hệ thống và không thể hoàn tác.");
+    const confirmClear = window.confirm("Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện trong phòng này? Hành động này sẽ xóa vĩnh viễn tin nhắn và không thể hoàn tác.");
     if (!confirmClear) return;
 
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`${API_BASE}/api/chat/history`, {
+      const response = await fetch(`${API_BASE}/api/chat/history/${conversationId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -207,7 +211,7 @@ export default function ChatRoom({
         }
 
         setMessages([{ sender: 'ai', text: welcomeMsg, timestamp: new Date() }]);
-        onNewEvaluation([]);
+        onNewEvaluation(null);
         setUsedTopicWords([]);
         speak(welcomeMsg);
       } else {
@@ -224,6 +228,9 @@ export default function ChatRoom({
     if (isRecording) {
       stopRecording();
     } else {
+      setInputText('');
+      setTranscript('');
+      setUsedVoice(true);
       startRecording();
     }
   };
@@ -234,13 +241,6 @@ export default function ChatRoom({
       setInputText(transcript);
     }
   }, [transcript]);
-
-  // Theo dõi khi người dùng dừng nói thì tự động gửi (Voice-First flow)
-  useEffect(() => {
-    if (!isRecording && transcript.trim() !== '') {
-      handleSendMessage(transcript, true);
-    }
-  }, [isRecording]);
 
   // Đồng bộ danh sách chẩn đoán (tối đa 5 cái gần nhất) lên App.jsx
   useEffect(() => {
@@ -265,7 +265,7 @@ export default function ChatRoom({
 
   return (
     <div className="chat-section glass-panel">
-      {/* Chat Header với Điều khiển giọng nói */}
+      {/* Chat Header */}
       <div className="chat-header">
         <div>
           <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>
@@ -276,38 +276,12 @@ export default function ChatRoom({
           </span>
         </div>
 
-        {/* Tùy chỉnh giọng đọc trực tiếp ở chat header */}
+        {/* Nút dọn dẹp hội thoại */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <select 
-            className="settings-select"
-            value={voiceConfig.accent}
-            onChange={(e) => setVoiceConfig(prev => ({ ...prev, accent: e.target.value }))}
-            style={{ padding: '4px 8px', fontSize: '0.75rem' }}
-          >
-            <option value="en-US">🇺🇸 Anh-Mỹ</option>
-            <option value="en-GB">🇬🇧 Anh-Anh</option>
-          </select>
-          <select 
-            className="settings-select"
-            value={voiceConfig.gender}
-            onChange={(e) => setVoiceConfig(prev => ({ ...prev, gender: e.target.value }))}
-            style={{ padding: '4px 8px', fontSize: '0.75rem' }}
-          >
-            <option value="female">👧 Nữ</option>
-            <option value="male">👦 Nam</option>
-          </select>
-          <button 
-            className="btn-secondary"
-            onClick={() => setVoiceConfig(prev => ({ ...prev, rate: prev.rate === 1.0 ? 0.8 : 1.0 }))}
-            style={{ padding: '4px 8px', fontSize: '0.75rem' }}
-          >
-            Speed: {voiceConfig.rate}x
-          </button>
-          
           <button 
             className="btn-secondary"
             onClick={handleClearConversation}
-            style={{ padding: '4px 8px', fontSize: '0.75rem', color: 'var(--color-danger)', borderColor: 'rgba(244,63,94,0.2)' }}
+            style={{ padding: '6px 12px', fontSize: '0.75rem', color: 'var(--color-danger)', borderColor: 'rgba(244,63,94,0.2)', borderRadius: '8px' }}
             title="Dọn dẹp sạch cuộc trò chuyện hiện tại"
           >
             🗑️ Dọn dẹp
@@ -315,7 +289,7 @@ export default function ChatRoom({
         </div>
       </div>
 
-      {/* Task Checklist hoặc Topic Words bar (Chỉ hiển thị khi đang trong chế độ tương ứng) */}
+      {/* Task Checklist hoặc Topic Words bar */}
       {contextMode === 'roleplay' && (
         <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px 20px', borderBottom: '1px solid var(--border-color)' }}>
           <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
@@ -336,18 +310,63 @@ export default function ChatRoom({
 
       {contextMode === 'topic' && (
         <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px 20px', borderBottom: '1px solid var(--border-color)' }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-            Từ vựng chủ đề (Nói để kích hoạt):
+          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>
+            Từ vựng chủ đề (Hãy sử dụng các từ này trong cuộc nói chuyện):
           </div>
-          <div className="topic-vocab-grid">
-            {contextDetails.coreVocabulary.map((word, idx) => {
-              const isUsed = usedTopicWords.includes(word);
-              return (
-                <span key={idx} className={`topic-vocab-chip ${isUsed ? 'used' : ''}`}>
-                  {word} {isUsed && '✓'}
-                </span>
-              );
-            })}
+          <div className="topic-vocab-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {contextDetails.vocabularyDetail && contextDetails.vocabularyDetail.length > 0 ? (
+              contextDetails.vocabularyDetail.map((item, idx) => {
+                const isUsed = usedTopicWords.some(w => w.toLowerCase() === item.word.toLowerCase());
+                return (
+                  <span 
+                    key={idx} 
+                    className={`topic-vocab-chip ${isUsed ? 'used' : ''}`}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '4px 10px',
+                      borderRadius: '20px',
+                      fontSize: '0.75rem',
+                      background: isUsed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                      border: isUsed ? '1px solid var(--color-success)' : '1px solid rgba(255, 255, 255, 0.1)',
+                      color: isUsed ? 'var(--color-success)' : 'var(--text-primary)',
+                      transition: 'all 0.3s ease',
+                      cursor: 'help'
+                    }}
+                    title={`Nghĩa: ${item.meaning}`}
+                  >
+                    <strong>{item.word}</strong> 
+                    <span style={{ fontSize: '0.65rem', opacity: 0.75 }}>({item.meaning})</span> 
+                    {isUsed && ' ✓'}
+                  </span>
+                );
+              })
+            ) : (
+              (contextDetails.coreVocabulary || []).map((word, idx) => {
+                const isUsed = usedTopicWords.some(w => w.toLowerCase() === word.toLowerCase());
+                return (
+                  <span 
+                    key={idx} 
+                    className={`topic-vocab-chip ${isUsed ? 'used' : ''}`}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '4px 10px',
+                      borderRadius: '20px',
+                      fontSize: '0.75rem',
+                      background: isUsed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                      border: isUsed ? '1px solid var(--color-success)' : '1px solid rgba(255, 255, 255, 0.1)',
+                      color: isUsed ? 'var(--color-success)' : 'var(--text-primary)',
+                      transition: 'all 0.3s ease'
+                    }}
+                  >
+                    {word} {isUsed && ' ✓'}
+                  </span>
+                );
+              })
+            )}
           </div>
         </div>
       )}
@@ -420,7 +439,7 @@ export default function ChatRoom({
             className={`record-btn ${isRecording ? 'recording' : ''}`}
             onClick={handleToggleRecord}
             disabled={loading}
-            title={isRecording ? "Dừng ghi âm và phân tích" : "Bắt đầu ghi âm nói tiếng Anh"}
+            title={isRecording ? "Dừng ghi âm" : "Bắt đầu ghi âm nói tiếng Anh"}
           >
             {isRecording ? '⏹' : '🎤'}
           </button>
@@ -428,7 +447,7 @@ export default function ChatRoom({
           <button 
             className="btn-neon" 
             style={{ padding: '12px 16px', borderRadius: '12px', minWidth: '50px', height: '50px', justifyContent: 'center' }}
-            onClick={() => handleSendMessage(inputText, false)}
+            onClick={() => handleSendMessage(inputText, usedVoice)}
             disabled={loading || !inputText.trim()}
             title="Gửi văn bản"
           >

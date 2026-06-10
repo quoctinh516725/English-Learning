@@ -3,8 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { query, initDb } from './db.js';
+import { Communicate } from 'edge-tts-universal';
 
 dotenv.config();
 
@@ -22,29 +22,8 @@ initDb().then(() => {
   console.error('Database initialization failed:', err);
 });
 
-// Cấu hình xoay tua API Keys (Round Robin) để tránh bị giới hạn quota
-let keyCounter = 0;
-function getGenAIClient() {
-  const keys = [
-    process.env.GEMINI_API_KEY_1,
-    process.env.GEMINI_API_KEY_2,
-    process.env.GEMINI_API_KEY_3,
-    process.env.GEMINI_API_KEY_4,
-    process.env.GEMINI_API_KEY_5,
-    process.env.GEMINI_API_KEY
-  ].filter(k => k && k.trim() !== '' && k !== 'your_gemini_api_key_here' && k !== 'your_api_key_here');
-
-  if (keys.length === 0) {
-    return null;
-  }
-
-  // Chọn key tiếp theo xoay tua
-  const selectedKey = keys[keyCounter % keys.length];
-  console.log(`[GenAI Round-Robin] Using API Key #${(keyCounter % keys.length) + 1} of ${keys.length}`);
-  keyCounter++;
-  
-  return new GoogleGenerativeAI(selectedKey);
-}
+// Biến đếm xoay tua các model của Groq
+let modelCounter = 0;
 
 // ==========================================
 // MIDDLEWARE XÁC THỰC TOKEN JWT
@@ -159,14 +138,74 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
 // 2. ENDPOINTS HỘI THOẠI AI TÍCH HỢP DB
 // ==========================================
 
-// Lấy lịch sử chat của user
-app.get('/api/chat/history', authenticateToken, async (req, res) => {
+// Lấy danh sách cuộc hội thoại của user
+app.get('/api/conversations', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    const history = await query(
-      'SELECT sender, text, suggestions, evaluation, timestamp FROM chat_messages WHERE user_id = $1 ORDER BY timestamp ASC LIMIT 50',
+    const result = await query(
+      'SELECT id, title, mode, details, created_at AS "createdAt" FROM conversations WHERE user_id = $1 ORDER BY created_at DESC',
       [userId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching conversations:', error);
+    res.status(500).json({ error: 'Failed to fetch conversations.' });
+  }
+});
+
+// Tạo một cuộc hội thoại mới
+app.post('/api/conversations', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { title, mode = 'free-talk', details = {} } = req.body;
+
+  try {
+    const result = await query(
+      'INSERT INTO conversations (user_id, title, mode, details) VALUES ($1, $2, $3, $4) RETURNING id, title, mode, details, created_at AS "createdAt"',
+      [userId, title, mode, JSON.stringify(details)]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating conversation:', error);
+    res.status(500).json({ error: 'Failed to create conversation.' });
+  }
+});
+
+// Xóa một cuộc hội thoại (sẽ tự động CASCADE xóa các tin nhắn liên quan)
+app.delete('/api/conversations/:id', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const conversationId = req.params.id;
+
+  try {
+    const result = await query(
+      'DELETE FROM conversations WHERE id = $1 AND user_id = $2 RETURNING id',
+      [conversationId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found or unauthorized.' });
+    }
+
+    res.json({ message: 'Conversation deleted successfully.', id: conversationId });
+  } catch (error) {
+    console.error('Error deleting conversation:', error);
+    res.status(500).json({ error: 'Failed to delete conversation.' });
+  }
+});
+
+// Lấy lịch sử chat của cuộc hội thoại
+app.get('/api/chat/history', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { conversationId } = req.query;
+
+  if (!conversationId) {
+    return res.status(400).json({ error: 'conversationId query parameter is required.' });
+  }
+
+  try {
+    const history = await query(
+      'SELECT sender, text, suggestions, evaluation, timestamp FROM chat_messages WHERE user_id = $1 AND conversation_id = $2 ORDER BY timestamp ASC LIMIT 50',
+      [userId, conversationId]
     );
     res.json(history.rows);
   } catch (error) {
@@ -175,12 +214,13 @@ app.get('/api/chat/history', authenticateToken, async (req, res) => {
   }
 });
 
-// Xóa hoàn toàn lịch sử chat của user
-app.delete('/api/chat/history', authenticateToken, async (req, res) => {
+// Xóa toàn bộ tin nhắn trong một cuộc hội thoại
+app.delete('/api/chat/history/:conversationId', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
+  const { conversationId } = req.params;
 
   try {
-    await query('DELETE FROM chat_messages WHERE user_id = $1', [userId]);
+    await query('DELETE FROM chat_messages WHERE user_id = $1 AND conversation_id = $2', [userId, conversationId]);
     res.json({ message: 'Chat history cleared successfully.' });
   } catch (error) {
     console.error('Error clearing chat history:', error);
@@ -188,13 +228,12 @@ app.delete('/api/chat/history', authenticateToken, async (req, res) => {
   }
 });
 
-// Gửi tin nhắn mới & Phân tích bằng Gemini
+// Gửi tin nhắn mới & Phân tích bằng Groq (Hỗ trợ Hội thoại)
 app.post('/api/chat', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   const { 
     userText, 
-    contextMode = 'free-talk',
-    contextDetails = {},
+    conversationId,
     chatHistory = [],
     isVoiceInput = false
   } = req.body;
@@ -203,20 +242,30 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
     return res.status(400).json({ error: 'User text is required.' });
   }
 
+  if (!conversationId) {
+    return res.status(400).json({ error: 'conversationId is required.' });
+  }
+
   try {
+    // Truy vấn thông tin kịch bản từ cuộc hội thoại
+    const convResult = await query(
+      'SELECT mode, details FROM conversations WHERE id = $1 AND user_id = $2',
+      [conversationId, userId]
+    );
+
+    if (convResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found or unauthorized.' });
+    }
+
+    const { mode: contextMode, details: contextDetailsJson } = convResult.rows[0];
+    const contextDetails = typeof contextDetailsJson === 'string' ? JSON.parse(contextDetailsJson) : (contextDetailsJson || {});
+
     let evaluationResult = null;
     
-    const hasKeys = [
-      process.env.GEMINI_API_KEY_1,
-      process.env.GEMINI_API_KEY_2,
-      process.env.GEMINI_API_KEY_3,
-      process.env.GEMINI_API_KEY_4,
-      process.env.GEMINI_API_KEY_5,
-      process.env.GEMINI_API_KEY
-    ].some(k => k && k.trim() !== '' && k !== 'your_gemini_api_key_here' && k !== 'your_api_key_here');
+    const hasKey = process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim() !== '';
 
-    if (!hasKeys) {
-      // Sử dụng mock response nếu không cấu hình Gemini API Key
+    if (!hasKey) {
+      // Sử dụng mock response nếu không cấu hình Groq API Key
       evaluationResult = getMockResponse(userText, contextMode, contextDetails);
     } else {
       // Lấy lịch sử chat từ tham số hoặc tải từ DB
@@ -299,85 +348,65 @@ You MUST output your response in JSON format matching the schema below:
 }
 `;
 
-      const prompt = `
-Chat History:
-${formattedHistory}
+      const prompt = `Chat History:\n${formattedHistory}\n\nUser's spoken text: "${userText}"\n\nResponse JSON:`;
 
-User's spoken text: "${userText}"
+      const messages = [
+        { role: 'system', content: systemInstruction },
+        { role: 'user', content: prompt }
+      ];
 
-Response JSON:
-`;
-
-      // Thu thập các API keys có cấu hình để xác định số lần thử tối đa
-      const keys = [
-        process.env.GEMINI_API_KEY_1,
-        process.env.GEMINI_API_KEY_2,
-        process.env.GEMINI_API_KEY_3,
-        process.env.GEMINI_API_KEY_4,
-        process.env.GEMINI_API_KEY_5,
-        process.env.GEMINI_API_KEY
-      ].filter(k => k && k.trim() !== '' && k !== 'your_gemini_api_key_here' && k !== 'your_api_key_here');
-
-      const maxAttempts = keys.length > 0 ? keys.length : 1;
-      let lastError = null;
+      // Xoay vòng và fallback giữa 3 models của Groq
+      const modelsToTry = ['llama-3.1-8b-instant', 'qwen/qwen3-32b', 'groq/compound-mini'];
       let responseText = null;
+      let lastError = null;
 
-      outerLoop:
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const clientGenAI = getGenAIClient();
-        if (!clientGenAI) {
-          throw new Error("No active API keys found");
-        }
+      const startIndex = modelCounter % modelsToTry.length;
+      modelCounter++;
 
-        // Cascade fallback các model khả dụng
-        const modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
+      for (let i = 0; i < modelsToTry.length; i++) {
+        const modelName = modelsToTry[(startIndex + i) % modelsToTry.length];
+        try {
+          console.log(`Calling Groq model: ${modelName} (Timeout 30s)`);
+          
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-        for (const modelName of modelsToTry) {
-          try {
-            console.log(`Calling model: ${modelName} with current API key (Timeout 30s)`);
-            const model = clientGenAI.getGenerativeModel({ model: modelName });
-            
-            // Tạo Promise chờ 30 giây để tránh đứng treo
-            const timeoutPromise = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error(`Model ${modelName} request timed out after 30 seconds`)), 30000)
-            );
+          const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: modelName,
+              messages: messages,
+              temperature: 0.7,
+              response_format: { type: 'json_object' }
+            }),
+            signal: controller.signal
+          });
 
-            const generatePromise = model.generateContent({
-              contents: [{ role: 'user', parts: [{ text: systemInstruction + '\n' + prompt }] }],
-              generationConfig: { responseMimeType: 'application/json' }
-            });
+          clearTimeout(timeoutId);
 
-            // Race giữa fetch và timeout
-            const result = await Promise.race([generatePromise, timeoutPromise]);
-            responseText = result.response.text();
-            if (responseText) {
-              console.log(`Success calling model ${modelName} with current API key`);
-              break outerLoop; // Thoát cả 2 vòng lặp khi thành công
-            }
-          } catch (e) {
-            console.warn(`Model ${modelName} failed or timed out: ${e.message}`);
-            lastError = e;
-
-            // Kiểm tra xem lỗi có phải cấp độ API Key hay không (hết quota, hết hạn, hoặc timeout)
-            const isKeyLevel = e.message.includes('429') || 
-                               e.message.includes('Too Many Requests') ||
-                               e.message.includes('503') || 
-                               e.message.includes('Service Unavailable') ||
-                               e.message.includes('401') || 
-                               e.message.includes('403') || 
-                               e.message.includes('API key') ||
-                               e.message.includes('timed out');
-            
-            if (isKeyLevel) {
-              console.log(`Key level error or timeout detected. Switching to next API key...`);
-              break; // Thoát khỏi vòng lặp model để chuyển sang API key khác ở vòng ngoài
-            }
+          if (!response.ok) {
+            const errBody = await response.text();
+            throw new Error(`Groq API error (${response.status}): ${errBody}`);
           }
+
+          const data = await response.json();
+          responseText = data.choices[0]?.message?.content;
+          if (responseText) {
+            console.log(`Success calling Groq model ${modelName}`);
+            break;
+          }
+        } catch (e) {
+          console.warn(`Groq model ${modelName} failed or timed out: ${e.message}`);
+          lastError = e;
         }
       }
 
       if (!responseText) {
-        throw lastError || new Error("All Gemini models and API keys failed to respond.");
+        throw lastError || new Error("All Groq models failed to respond.");
       }
 
       evaluationResult = cleanAndParseJSON(responseText);
@@ -390,14 +419,14 @@ Response JSON:
 
     // 1. Lưu tin nhắn của user kèm chẩn đoán lỗi vào database
     await query(
-      'INSERT INTO chat_messages (user_id, sender, text, evaluation) VALUES ($1, $2, $3, $4)',
-      [userId, 'user', userText, JSON.stringify(evaluationResult)]
+      'INSERT INTO chat_messages (user_id, conversation_id, sender, text, evaluation) VALUES ($1, $2, $3, $4, $5)',
+      [userId, conversationId, 'user', userText, JSON.stringify(evaluationResult)]
     );
 
     // 2. Lưu tin nhắn phản hồi của AI kèm suggestions vào database
     await query(
-      'INSERT INTO chat_messages (user_id, sender, text, suggestions) VALUES ($1, $2, $3, $4)',
-      [userId, 'ai', evaluationResult.aiResponse, JSON.stringify(evaluationResult.suggestions)]
+      'INSERT INTO chat_messages (user_id, conversation_id, sender, text, suggestions) VALUES ($1, $2, $3, $4, $5)',
+      [userId, conversationId, 'ai', evaluationResult.aiResponse, JSON.stringify(evaluationResult.suggestions)]
     );
 
     res.json(evaluationResult);
@@ -413,18 +442,57 @@ Response JSON:
 
     try {
       await query(
-        'INSERT INTO chat_messages (user_id, sender, text, evaluation) VALUES ($1, $2, $3, $4)',
-        [userId, 'user', userText, JSON.stringify(fallbackResult)]
+        'INSERT INTO chat_messages (user_id, conversation_id, sender, text, evaluation) VALUES ($1, $2, $3, $4, $5)',
+        [userId, conversationId, 'user', userText, JSON.stringify(fallbackResult)]
       );
       await query(
-        'INSERT INTO chat_messages (user_id, sender, text, suggestions) VALUES ($1, $2, $3, $4)',
-        [userId, 'ai', fallbackResult.aiResponse, JSON.stringify(fallbackResult.suggestions)]
+        'INSERT INTO chat_messages (user_id, conversation_id, sender, text, suggestions) VALUES ($1, $2, $3, $4, $5)',
+        [userId, conversationId, 'ai', fallbackResult.aiResponse, JSON.stringify(fallbackResult.suggestions)]
       );
     } catch (dbErr) {
       console.error('Failed to save fallback chat to DB:', dbErr);
     }
 
     res.json(fallbackResult);
+  }
+});
+
+// Helper định dạng tốc độ đọc cho edge-tts
+function formatRate(rate) {
+  const num = parseFloat(rate);
+  if (isNaN(num)) return '+0%';
+  const percent = Math.round((num - 1) * 100);
+  return percent >= 0 ? `+${percent}%` : `${percent}%`;
+}
+
+// Endpoint Text-To-Speech sử dụng edge-tts-universal
+app.get('/api/tts', async (req, res) => {
+  const { text, rate = '1.0' } = req.query;
+
+  if (!text || text.trim() === '') {
+    return res.status(400).json({ error: 'Text query parameter is required.' });
+  }
+
+  try {
+    const voice = 'en-US-GuyNeural';
+    const ttsRate = formatRate(rate);
+    console.log(`[TTS] Generating speech for text: "${text.substring(0, 30)}..." using voice ${voice} at rate ${ttsRate}`);
+    
+    const comm = new Communicate(text, { voice, rate: ttsRate });
+
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Transfer-Encoding', 'chunked');
+
+    for await (const chunk of comm.stream()) {
+      if (chunk.type === 'audio') {
+        res.write(chunk.data);
+      }
+    }
+    
+    res.end();
+  } catch (error) {
+    console.error('Error generating speech:', error);
+    res.status(500).json({ error: 'Failed to generate speech.' });
   }
 });
 

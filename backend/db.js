@@ -61,6 +61,17 @@ export const initDb = async () => {
     );
   `;
 
+  const createConversationsTable = `
+    CREATE TABLE IF NOT EXISTS conversations (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      title VARCHAR(255) NOT NULL,
+      mode VARCHAR(50) DEFAULT 'free-talk',
+      details JSONB,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+
   const createChatMessagesTable = `
     CREATE TABLE IF NOT EXISTS chat_messages (
       id SERIAL PRIMARY KEY,
@@ -75,12 +86,16 @@ export const initDb = async () => {
 
   try {
     await pool.query(createUsersTable);
+    await pool.query(createConversationsTable);
     await pool.query(createNotebookTable);
     await pool.query(createFlashcardsTable);
     await pool.query(createChatMessagesTable);
     
     // Đảm bảo cột evaluation tồn tại nếu bảng đã được tạo trước đó
     await pool.query('ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS evaluation JSONB;');
+
+    // Đảm bảo cột conversation_id tồn tại để lưu trữ nhiều phòng chat độc lập
+    await pool.query('ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS conversation_id INTEGER REFERENCES conversations(id) ON DELETE CASCADE;');
     
     console.log('Database tables initialized successfully.');
   } catch (error) {

@@ -1,91 +1,67 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
+
+const API_BASE = import.meta.env.VITE_BACBKEND_URL || 'http://localhost:5000';
 
 export default function useSpeechSynthesis() {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [voices, setVoices] = useState([]);
   const [voiceConfig, setVoiceConfig] = useState({
-    accent: 'en-US', // en-US, en-GB
-    gender: 'female', // female, male
-    rate: 1.0 // 0.8, 1.0
+    accent: 'en-US',
+    gender: 'female',
+    rate: 1.0
   });
 
-  const synthRef = useRef(null);
-  const utteranceRef = useRef(null);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      synthRef.current = window.speechSynthesis;
-      
-      const updateVoices = () => {
-        const allVoices = window.speechSynthesis.getVoices();
-        // Lọc các giọng đọc tiếng Anh
-        const enVoices = allVoices.filter(v => v.lang.startsWith('en'));
-        setVoices(enVoices);
-      };
-
-      updateVoices();
-      window.speechSynthesis.onvoiceschanged = updateVoices;
-    }
-  }, []);
+  const audioRef = useRef(null);
 
   const speak = (text) => {
-    if (!synthRef.current) return;
+    if (!text || text.trim() === '') return;
 
     // Dừng âm thanh đang phát trước đó
-    synthRef.current.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utteranceRef.current = utterance;
-
-    // Cấu hình tốc độ đọc
-    utterance.rate = voiceConfig.rate;
-
-    // Tìm giọng đọc khớp với cấu hình accent và gender
-    const englishVoices = voices.filter(v => v.lang.toLowerCase().includes(voiceConfig.accent.toLowerCase()));
-    
-    // Thuật toán tìm kiếm giọng nam/nữ (phần lớn dựa trên tên giọng đọc trên các hệ điều hành)
-    let selectedVoice = null;
-    if (englishVoices.length > 0) {
-      if (voiceConfig.gender === 'male') {
-        selectedVoice = englishVoices.find(v => 
-          v.name.toLowerCase().includes('david') || 
-          v.name.toLowerCase().includes('male') || 
-          v.name.toLowerCase().includes('google uk english male') || 
-          v.name.toLowerCase().includes('mark')
-        ) || englishVoices[0];
-      } else {
-        selectedVoice = englishVoices.find(v => 
-          v.name.toLowerCase().includes('zira') || 
-          v.name.toLowerCase().includes('female') || 
-          v.name.toLowerCase().includes('samantha') || 
-          v.name.toLowerCase().includes('hazel') || 
-          v.name.toLowerCase().includes('google uk english female')
-        ) || englishVoices[0];
-      }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+      setIsPlaying(false);
     }
 
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
+    try {
+      // Gọi API TTS của Backend để tải và phát file MP3
+      const url = `${API_BASE}/api/tts?text=${encodeURIComponent(text)}&rate=${voiceConfig.rate}`;
+      const audio = new Audio(url);
+      audioRef.current = audio;
+
+      audio.onplay = () => setIsPlaying(true);
+      audio.onended = () => {
+        setIsPlaying(false);
+        audioRef.current = null;
+      };
+      audio.onerror = (e) => {
+        console.error('Audio playback error:', e);
+        setIsPlaying(false);
+        audioRef.current = null;
+      };
+
+      audio.play().catch(err => {
+        console.error('Failed to play audio:', err);
+        setIsPlaying(false);
+      });
+    } catch (err) {
+      console.error('Failed to play TTS:', err);
+      setIsPlaying(false);
     }
-
-    utterance.onstart = () => setIsPlaying(true);
-    utterance.onend = () => setIsPlaying(false);
-    utterance.onerror = () => setIsPlaying(false);
-
-    synthRef.current.speak(utterance);
   };
 
   const stop = () => {
-    if (!synthRef.current) return;
-    synthRef.current.cancel();
-    setIsPlaying(false);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+      setIsPlaying(false);
+    }
   };
 
   return {
     speak,
     stop,
     isPlaying,
-    voices,
+    voices: [], // Giọng đọc cố định ở backend
     voiceConfig,
     setVoiceConfig
   };
