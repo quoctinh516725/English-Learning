@@ -14,9 +14,10 @@ export default function Auth({ onSuccess, onNotify }) {
     setLoading(true);
     setError(null);
 
+    const API_BASE = import.meta.env.VITE_BACBKEND_URL || 'http://localhost:5000';
     const url = isLogin 
-      ? 'http://localhost:5000/api/auth/login' 
-      : 'http://localhost:5000/api/auth/register';
+      ? `${API_BASE}/api/auth/login` 
+      : `${API_BASE}/api/auth/register`;
 
     try {
       const response = await fetch(url, {

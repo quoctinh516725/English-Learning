@@ -11,11 +11,13 @@ const getHeaders = () => {
   };
 };
 
+const API_BASE = import.meta.env.VITE_BACBKEND_URL || 'http://localhost:5000';
+
 export const db = {
   // --- Notebook Operations (Cloud DB) ---
   async getNotebook() {
     try {
-      const response = await fetch('http://localhost:5000/api/notebook', {
+      const response = await fetch(`${API_BASE}/api/notebook`, {
         headers: getHeaders()
       });
       if (!response.ok) throw new Error('Failed to fetch notebook.');
@@ -28,7 +30,7 @@ export const db = {
 
   async saveToNotebook(item) {
     try {
-      const response = await fetch('http://localhost:5000/api/notebook', {
+      const response = await fetch(`${API_BASE}/api/notebook`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(item)
@@ -47,7 +49,7 @@ export const db = {
 
   async removeFromNotebook(id) {
     try {
-      const response = await fetch(`http://localhost:5000/api/notebook/${id}`, {
+      const response = await fetch(`${API_BASE}/api/notebook/${id}`, {
         method: 'DELETE',
         headers: getHeaders()
       });
@@ -62,7 +64,7 @@ export const db = {
   // --- Flashcard Operations (Cloud DB & SM-2) ---
   async getDueFlashcards() {
     try {
-      const response = await fetch('http://localhost:5000/api/flashcards/due', {
+      const response = await fetch(`${API_BASE}/api/flashcards/due`, {
         headers: getHeaders()
       });
       if (!response.ok) throw new Error('Failed to fetch due flashcards.');
@@ -75,7 +77,7 @@ export const db = {
 
   async updateFlashcardSchedule(cardId, grade) {
     try {
-      const response = await fetch('http://localhost:5000/api/flashcards/review', {
+      const response = await fetch(`${API_BASE}/api/flashcards/review`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ cardId, grade })

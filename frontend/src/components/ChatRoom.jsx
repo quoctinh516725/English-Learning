@@ -22,6 +22,8 @@ export default function ChatRoom({
 
   const chatEndRef = useRef(null);
 
+  const API_BASE = import.meta.env.VITE_BACBKEND_URL || 'http://localhost:5000';
+
   // Khởi tạo phòng chat khi đổi chế độ
   useEffect(() => {
     setMessages([]);
@@ -43,7 +45,7 @@ export default function ChatRoom({
       setLoading(true);
       try {
         const token = localStorage.getItem('auth_token');
-        const response = await fetch('http://localhost:5000/api/chat/history', {
+        const response = await fetch(`${API_BASE}/api/chat/history`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (response.ok) {
@@ -103,7 +105,7 @@ export default function ChatRoom({
 
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('http://localhost:5000/api/chat', {
+      const response = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -185,7 +187,7 @@ export default function ChatRoom({
 
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('http://localhost:5000/api/chat/history', {
+      const response = await fetch(`${API_BASE}/api/chat/history`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
