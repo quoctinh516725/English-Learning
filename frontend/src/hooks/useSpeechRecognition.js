@@ -4,7 +4,11 @@ export default function useSpeechRecognition() {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [supported, setSupported] = useState(true);
+  
   const recognitionRef = useRef(null);
+  const isRecordingRef = useRef(false);
+  const finalTranscriptRef = useRef('');
+  const currentTranscriptRef = useRef('');
 
   useEffect(() => {
     // Kiểm tra tính tương thích của trình duyệt
@@ -61,18 +65,40 @@ export default function useSpeechRecognition() {
         }
       }
 
-      setTranscript(merged);
+      // Ghép kết quả của phiên hiện tại vào phần final của các phiên trước đó
+      const fullTranscript = (finalTranscriptRef.current + ' ' + merged).trim();
+      currentTranscriptRef.current = fullTranscript;
+      setTranscript(fullTranscript);
     };
 
     rec.onerror = (event) => {
       console.error('Speech recognition error:', event.error);
-      if (event.error === 'no-speech') {
-        // Không có tiếng động, tự động dừng
-      }
     };
 
     rec.onend = () => {
-      setIsRecording(false);
+      // Nếu người dùng không chủ động Stop (isRecordingRef.current vẫn là true)
+      // thì có nghĩa là hệ thống Speech Recognition tự ngắt do im lặng (silence timeout).
+      // Ta sẽ tự động khởi động lại để người dùng nói tiếp mà không mất câu cũ.
+      if (isRecordingRef.current) {
+        finalTranscriptRef.current = currentTranscriptRef.current;
+        try {
+          recognitionRef.current.start();
+          console.log('[SpeechRecognition] Auto-restarted due to silence timeout.');
+        } catch (e) {
+          // Thử lại sau 100ms nếu trình duyệt chưa kịp giải phóng mic
+          setTimeout(() => {
+            if (isRecordingRef.current) {
+              try {
+                recognitionRef.current.start();
+              } catch (err) {
+                console.error('[SpeechRecognition] Retry start failed:', err);
+              }
+            }
+          }, 100);
+        }
+      } else {
+        setIsRecording(false);
+      }
     };
 
     recognitionRef.current = rec;
@@ -85,9 +111,12 @@ export default function useSpeechRecognition() {
     }
     
     try {
+      finalTranscriptRef.current = '';
+      currentTranscriptRef.current = '';
       setTranscript('');
-      recognitionRef.current.start();
+      isRecordingRef.current = true;
       setIsRecording(true);
+      recognitionRef.current.start();
     } catch (e) {
       console.error('Failed to start speech recognition:', e);
     }
@@ -97,8 +126,9 @@ export default function useSpeechRecognition() {
     if (!supported || !recognitionRef.current) return;
     
     try {
-      recognitionRef.current.stop();
+      isRecordingRef.current = false;
       setIsRecording(false);
+      recognitionRef.current.stop();
     } catch (e) {
       console.error('Failed to stop speech recognition:', e);
     }
