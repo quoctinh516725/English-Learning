@@ -7,7 +7,6 @@ const { Pool } = pkg;
 
 const connectionString = process.env.DATABASE_URL;
 
-// Cấu hình SSL nếu kết nối tới Supabase Cloud
 const pool = new Pool({
   connectionString,
   ssl: connectionString && (connectionString.includes('supabase') || connectionString.includes('neon') || connectionString.includes('render'))
@@ -23,80 +22,98 @@ export const initDb = async () => {
     return;
   }
 
-  const createUsersTable = `
-    CREATE TABLE IF NOT EXISTS users (
+  // ── Core session tables ──────────────────────────────────────────────────
+  const createSessionsTable = `
+    CREATE TABLE IF NOT EXISTS sessions (
       id SERIAL PRIMARY KEY,
-      email VARCHAR(255) UNIQUE NOT NULL,
-      password_hash VARCHAR(255) NOT NULL,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );
-  `;
-
-  const createNotebookTable = `
-    CREATE TABLE IF NOT EXISTS notebook (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      original TEXT NOT NULL,
-      corrected TEXT,
-      explanation TEXT,
-      ipa VARCHAR(255),
-      type VARCHAR(50) DEFAULT 'sentence',
-      saved_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );
-  `;
-
-  const createFlashcardsTable = `
-    CREATE TABLE IF NOT EXISTS flashcards (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      notebook_id INTEGER REFERENCES notebook(id) ON DELETE SET NULL,
-      front TEXT NOT NULL,
-      back TEXT NOT NULL,
-      ipa VARCHAR(255),
-      repetitions INTEGER DEFAULT 0,
-      interval INTEGER DEFAULT 1,
-      ease_factor NUMERIC(4,2) DEFAULT 2.50,
-      next_review_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );
-  `;
-
-  const createConversationsTable = `
-    CREATE TABLE IF NOT EXISTS conversations (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      title VARCHAR(255) NOT NULL,
-      mode VARCHAR(50) DEFAULT 'free-talk',
-      details JSONB,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      topic_description TEXT,
+      session_type VARCHAR(20) DEFAULT 'free-talk', -- 'free-talk' | 'drill'
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      ended_at TIMESTAMPTZ,
+      duration_seconds INTEGER,
+      status VARCHAR(20) DEFAULT 'active'           -- 'active' | 'completed'
     );
   `;
 
   const createChatMessagesTable = `
     CREATE TABLE IF NOT EXISTS chat_messages (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      session_id INTEGER REFERENCES sessions(id) ON DELETE CASCADE,
       sender VARCHAR(10) NOT NULL CHECK (sender IN ('user', 'ai')),
       text TEXT NOT NULL,
       suggestions JSONB,
-      evaluation JSONB,
-      timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      timestamp TIMESTAMPTZ DEFAULT NOW()
+    );
+  `;
+
+  const createSessionAnalysisTable = `
+    CREATE TABLE IF NOT EXISTS session_analysis (
+      id SERIAL PRIMARY KEY,
+      session_id INTEGER REFERENCES sessions(id) ON DELETE CASCADE,
+      fluency_score INTEGER,
+      vocab_range_score INTEGER,
+      grammar_score INTEGER,
+      avg_response_length NUMERIC,
+      repeated_words JSONB,
+      error_patterns JSONB,
+      chunks_detected JSONB,
+      active_words_used JSONB,
+      summary TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `;
+
+  // ── Vocabulary intelligence tables ───────────────────────────────────────
+  const createWordUsageTable = `
+    CREATE TABLE IF NOT EXISTS word_usage (
+      id SERIAL PRIMARY KEY,
+      word VARCHAR(255) UNIQUE NOT NULL,
+      use_count INTEGER DEFAULT 0,
+      first_used_at TIMESTAMPTZ,
+      last_used_at TIMESTAMPTZ,
+      example_sentences JSONB,
+      drill_count INTEGER DEFAULT 0,
+      mastered BOOLEAN DEFAULT FALSE,
+      mastered_at TIMESTAMPTZ
+    );
+  `;
+
+  const createChunksTable = `
+    CREATE TABLE IF NOT EXISTS chunks (
+      id SERIAL PRIMARY KEY,
+      chunk TEXT UNIQUE NOT NULL,
+      source_session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+      use_count INTEGER DEFAULT 1,
+      first_seen_at TIMESTAMPTZ DEFAULT NOW(),
+      last_used_at TIMESTAMPTZ DEFAULT NOW(),
+      drill_count INTEGER DEFAULT 0,
+      mastered BOOLEAN DEFAULT FALSE,
+      mastered_at TIMESTAMPTZ
+    );
+  `;
+
+  // ── Drill session tables ─────────────────────────────────────────────────
+  const createDrillSessionsTable = `
+    CREATE TABLE IF NOT EXISTS drill_sessions (
+      id SERIAL PRIMARY KEY,
+      target_text VARCHAR(500) NOT NULL,
+      target_type VARCHAR(10) NOT NULL CHECK (target_type IN ('word', 'chunk')),
+      scenario_hint TEXT,
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      completed_at TIMESTAMPTZ,
+      self_mastered BOOLEAN DEFAULT FALSE,
+      times_target_used INTEGER DEFAULT 0
     );
   `;
 
   try {
-    await pool.query(createUsersTable);
-    await pool.query(createConversationsTable);
-    await pool.query(createNotebookTable);
-    await pool.query(createFlashcardsTable);
+    await pool.query(createSessionsTable);
     await pool.query(createChatMessagesTable);
-    
-    // Đảm bảo cột evaluation tồn tại nếu bảng đã được tạo trước đó
-    await pool.query('ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS evaluation JSONB;');
+    await pool.query(createSessionAnalysisTable);
+    await pool.query(createWordUsageTable);
+    await pool.query(createChunksTable);
+    await pool.query(createDrillSessionsTable);
 
-    // Đảm bảo cột conversation_id tồn tại để lưu trữ nhiều phòng chat độc lập
-    await pool.query('ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS conversation_id INTEGER REFERENCES conversations(id) ON DELETE CASCADE;');
-    
     console.log('Database tables initialized successfully.');
   } catch (error) {
     console.error('Error initializing database tables:', error);
@@ -104,7 +121,4 @@ export const initDb = async () => {
   }
 };
 
-export default {
-  query,
-  initDb
-};
+export default { query, initDb };

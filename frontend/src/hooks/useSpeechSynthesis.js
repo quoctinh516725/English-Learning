@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 
-const API_BASE = import.meta.env.VITE_BACBKEND_URL || 'http://localhost:5000';
+const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACBKEND_URL || 'http://localhost:5000';
 
 export default function useSpeechSynthesis() {
   const [isPlaying, setIsPlaying] = useState(false);

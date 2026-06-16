@@ -1,135 +1,115 @@
-// Dịch vụ đồng bộ dữ liệu với Backend (Supabase PostgreSQL Cloud DB)
-// Đọc token xác thực JWT từ localStorage để đính kèm vào header Authorization
+const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_BACBKEND_URL || 'http://localhost:5000';
 
-const getToken = () => localStorage.getItem('auth_token');
+const headers = () => ({ 'Content-Type': 'application/json' });
 
-const getHeaders = () => {
-  const token = getToken();
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-  };
-};
-
-const API_BASE = import.meta.env.VITE_BACBKEND_URL || 'http://localhost:5000';
-
-export const db = {
-  // --- Notebook Operations (Cloud DB) ---
-  async getNotebook() {
-    try {
-      const response = await fetch(`${API_BASE}/api/notebook`, {
-        headers: getHeaders()
-      });
-      if (!response.ok) throw new Error('Failed to fetch notebook.');
-      return await response.json();
-    } catch (e) {
-      console.error('Error fetching notebook:', e);
-      return [];
-    }
-  },
-
-  async saveToNotebook(item) {
-    try {
-      const response = await fetch(`${API_BASE}/api/notebook`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify(item)
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Save to notebook error:', errorData.error);
-        return false;
-      }
-      return true;
-    } catch (e) {
-      console.error('Error saving to notebook:', e);
-      return false;
-    }
-  },
-
-  async removeFromNotebook(id) {
-    try {
-      const response = await fetch(`${API_BASE}/api/notebook/${id}`, {
-        method: 'DELETE',
-        headers: getHeaders()
-      });
-      if (!response.ok) throw new Error('Failed to remove from notebook.');
-      return true;
-    } catch (e) {
-      console.error('Error removing from notebook:', e);
-      return false;
-    }
-  },
-
-  // --- Flashcard Operations (Cloud DB & SM-2) ---
-  async getDueFlashcards() {
-    try {
-      const response = await fetch(`${API_BASE}/api/flashcards/due`, {
-        headers: getHeaders()
-      });
-      if (!response.ok) throw new Error('Failed to fetch due flashcards.');
-      return await response.json();
-    } catch (e) {
-      console.error('Error fetching due flashcards:', e);
-      return [];
-    }
-  },
-
-  async updateFlashcardSchedule(cardId, grade) {
-    try {
-      const response = await fetch(`${API_BASE}/api/flashcards/review`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ cardId, grade })
-      });
-      if (!response.ok) throw new Error('Failed to update review progress.');
-      return await response.json();
-    } catch (e) {
-      console.error('Error updating flashcard schedule:', e);
-      return null;
-    }
-  },
-
-  // --- Conversation Operations (Cloud DB) ---
-  async getConversations() {
-    try {
-      const response = await fetch(`${API_BASE}/api/conversations`, {
-        headers: getHeaders()
-      });
-      if (!response.ok) throw new Error('Failed to fetch conversations.');
-      return await response.json();
-    } catch (e) {
-      console.error('Error fetching conversations:', e);
-      return [];
-    }
-  },
-
-  async createConversation(title, mode = 'free-talk', details = {}) {
-    try {
-      const response = await fetch(`${API_BASE}/api/conversations`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ title, mode, details })
-      });
-      if (!response.ok) throw new Error('Failed to create conversation.');
-      return await response.json();
-    } catch (e) {
-      console.error('Error creating conversation:', e);
-      return null;
-    }
-  },
-
-  async deleteConversation(id) {
-    try {
-      const response = await fetch(`${API_BASE}/api/conversations/${id}`, {
-        method: 'DELETE',
-        headers: getHeaders()
-      });
-      if (!response.ok) throw new Error('Failed to delete conversation.');
-      return true;
-    } catch (e) {
-      console.error('Error deleting conversation:', e);
-      return false;
-    }
+const handleResponse = async (res) => {
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Request failed');
   }
+  return res.json();
 };
+
+// ── Sessions ────────────────────────────────────────────────────────────────
+export const getSessions = () =>
+  fetch(`${API_BASE}/api/sessions`).then(handleResponse);
+
+export const createSession = (topic_description, session_type = 'free-talk') =>
+  fetch(`${API_BASE}/api/sessions`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ topic_description, session_type })
+  }).then(handleResponse);
+
+export const deleteSession = (id) =>
+  fetch(`${API_BASE}/api/sessions/${id}`, { method: 'DELETE' }).then(handleResponse);
+
+export const endSession = (id) =>
+  fetch(`${API_BASE}/api/sessions/${id}/end`, { method: 'POST', headers: headers() }).then(handleResponse);
+
+export const getSessionReport = (id) =>
+  fetch(`${API_BASE}/api/sessions/${id}/report`).then(handleResponse);
+
+// ── Chat ────────────────────────────────────────────────────────────────────
+export const getChatHistory = (sessionId) =>
+  fetch(`${API_BASE}/api/chat/history?sessionId=${sessionId}`).then(handleResponse);
+
+export const sendChat = (payload) =>
+  fetch(`${API_BASE}/api/chat`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(payload)
+  }).then(handleResponse);
+
+// ── Vocabulary ───────────────────────────────────────────────────────────────
+export const getVocabulary = () =>
+  fetch(`${API_BASE}/api/vocabulary`).then(handleResponse);
+
+export const addVocabulary = (word) =>
+  fetch(`${API_BASE}/api/vocabulary`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ word })
+  }).then(handleResponse);
+
+export const deleteVocabulary = (id) =>
+  fetch(`${API_BASE}/api/vocabulary/${id}`, { method: 'DELETE' }).then(handleResponse);
+
+export const getChunks = () =>
+  fetch(`${API_BASE}/api/chunks`).then(handleResponse);
+
+export const addChunk = (chunk) =>
+  fetch(`${API_BASE}/api/chunks`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ chunk })
+  }).then(handleResponse);
+
+export const deleteChunk = (id) =>
+  fetch(`${API_BASE}/api/chunks/${id}`, { method: 'DELETE' }).then(handleResponse);
+
+export const getDailyMission = () =>
+  fetch(`${API_BASE}/api/missions/today`).then(handleResponse);
+
+// ── Drill ────────────────────────────────────────────────────────────────────
+export const startDrill = (target, type = 'word') =>
+  fetch(`${API_BASE}/api/drill/start`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ target, type })
+  }).then(handleResponse);
+
+export const completeDrill = (id, payload) =>
+  fetch(`${API_BASE}/api/drill/${id}/complete`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(payload)
+  }).then(handleResponse);
+
+// ── Progress ─────────────────────────────────────────────────────────────────
+export const getProgressSummary = () =>
+  fetch(`${API_BASE}/api/progress/summary`).then(handleResponse);
+
+export const getErrorPatterns = () =>
+  fetch(`${API_BASE}/api/progress/errors`).then(handleResponse);
+
+export const getProgressSessions = () =>
+  fetch(`${API_BASE}/api/progress/sessions`).then(handleResponse);
+
+// ── TTS Helper ────────────────────────────────────────────────────────────────
+export const getTTSUrl = (text, rate = '1.0') =>
+  `${API_BASE}/api/tts?text=${encodeURIComponent(text)}&rate=${rate}`;
+
+// Legacy default export for backward compat during migration
+const db = {
+  getSessions, createSession, deleteSession, endSession, getSessionReport,
+  getChatHistory, sendChat,
+  getVocabulary, addVocabulary, deleteVocabulary,
+  getChunks, addChunk, deleteChunk,
+  getDailyMission,
+  startDrill, completeDrill,
+  getProgressSummary, getErrorPatterns, getProgressSessions,
+  getTTSUrl
+};
+
+export default db;
