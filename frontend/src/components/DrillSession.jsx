@@ -175,6 +175,7 @@ export default function DrillSession({ drillConfig, onEndDrill, showNotification
         sender: 'ai',
         text: data.aiResponse,
         suggestions: data.suggestions,
+        grammarNote: data.grammarNote,
         spottedItems: data.spottedItems || [],
         timestamp: new Date()
       };
@@ -290,6 +291,14 @@ export default function DrillSession({ drillConfig, onEndDrill, showNotification
               <div className="message-text">
                 {msg.sender === 'user' ? highlightTarget(msg.text, target) : msg.text}
               </div>
+
+              {msg.sender === 'ai' && msg.grammarNote?.hasError && (
+                <div className="grammar-note">
+                  <span className="grammar-note-icon">✏️</span>
+                  <span className="grammar-correction">{msg.grammarNote.correction}</span>
+                  <span className="grammar-explanation"> — {msg.grammarNote.note}</span>
+                </div>
+              )}
 
               {msg.sender === 'ai' && msg.spottedItems && msg.spottedItems.length > 0 && (
                 <div className="spotted-items-container">

@@ -388,6 +388,9 @@ CRITICAL RULES:
 6. Be warm and conversational, like a native English friend, not a teacher.
 7. CRITICAL RULE FOR SUGGESTIONS: The suggestions object must contain reply options/templates for the USER to answer YOUR question. They must NOT be questions. They must be statements written from the USER's perspective (using 'I' or 'My') answering the AI's question.
 8. SPOTTED ITEMS: Identify 1-2 useful chunks (collocations, phrasal verbs, idioms) or advanced words related to the current context. Return them in the "spottedItems" array.
+9. VIETNAMESE INPUT / TRANSLATION REQUESTS: If the user inputs Vietnamese (e.g., they don't know how to express an idea in English, or mix English and Vietnamese), you must:
+       a. In "aiResponse": Acknowledge their idea in English, show them how to express their FULL thought naturally in English, and then ask a follow-up question in English. (Do NOT use the drill target word yourself in the aiResponse!).
+       b. In "grammarNote": Set "hasError" to true. Set "correction" to the complete and natural English translation of their Vietnamese thought. Set "note" to a brief explanation of the translation/phrasing, starting with "Translation: ".
 
 Your JSON response must follow this schema:
 {
@@ -396,6 +399,11 @@ Your JSON response must follow this schema:
     "short": "A short statement or phrase in English written from the USER's perspective (using 'I' or 'My') answering the AI's question.",
     "full": "A complete sentence in English written from the USER's perspective (using 'I' or 'My') answering the AI's question.",
     "advanced": "An advanced reply option in English written from the USER's perspective (using 'I' or 'My') answering the AI's question, using natural chunks."
+  },
+  "grammarNote": {
+    "hasError": true or false,
+    "correction": "Corrected version or natural translation (only if hasError is true)",
+    "note": "One brief explanation (only if hasError is true)"
   },
   "targetUsed": true or false,
   "targetUsedCount": 0,
@@ -428,6 +436,9 @@ Coaching Rules:
 6. If the user makes a grammar error, acknowledge their IDEA first, then gently model the correct form in your reply (don't lecture).
 7. CRITICAL RULE FOR SUGGESTIONS: The suggestions object must contain reply options/templates for the USER to answer YOUR question. They must NOT be questions. They must be statements written from the USER's perspective (using 'I' or 'My') answering the AI's question.
 8. SPOTTED ITEMS: Identify 1-2 useful chunks (collocations, phrasal verbs, idioms) or advanced words related to the current context. Return them in the "spottedItems" array.
+9. VIETNAMESE INPUT / TRANSLATION REQUESTS: If the user inputs Vietnamese (e.g., they don't know how to express an idea in English, or mix English and Vietnamese), you must:
+   a. In "aiResponse": Acknowledge their idea in English, show them how to express their FULL thought naturally in English, and then ask a follow-up question in English.
+   b. In "grammarNote": Set "hasError" to true. Set "correction" to the complete and natural English translation of their Vietnamese thought. Set "note" to a brief explanation of the translation/phrasing, starting with "Translation: ".
 
 ${targetWordsList.length > 0 ? `Today's Activation Targets (guide the user to naturally use these words if relevant): [${targetWordsList.join(', ')}]. If they use one, acknowledge it subtly and positively.` : ''}
 ${topChunksList.length > 0 ? `Known Chunks to Reinforce (model these naturally in your replies to the user if relevant): [${topChunksList.join(', ')}].` : ''}
@@ -500,19 +511,23 @@ Your JSON response must follow this schema:
     }
 
     // Update use_count for existing words in user message (no auto-saving new words)
-    const contentWords = userText
-      .toLowerCase()
-      .replace(/[^a-z\s]/g, ' ')
-      .split(/\s+/)
-      .filter(w => w.length > 3); // skip short function words
+    // Skip updating if the message is primarily Vietnamese (contains Vietnamese accents)
+    const hasVietnameseAccents = /[àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệđìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]/i.test(userText);
+    if (!hasVietnameseAccents) {
+      const contentWords = userText
+        .toLowerCase()
+        .replace(/[^a-z\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length > 3); // skip short function words
 
-    for (const word of contentWords) {
-      await query(
-        `UPDATE word_usage 
-         SET use_count = use_count + 1, last_used_at = NOW()
-         WHERE word = $1`,
-        [word]
-      );
+      for (const word of contentWords) {
+        await query(
+          `UPDATE word_usage 
+           SET use_count = use_count + 1, last_used_at = NOW()
+           WHERE word = $1`,
+          [word]
+        );
+      }
     }
 
     res.json(result);
